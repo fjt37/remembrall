@@ -1,0 +1,4 @@
+ - If possessive, add name
+ - If name, add possessive
+ - Include root form of verbs and adjectives (what about tenses?)
+ - If hyphenated, add each word separately
