@@ -10,18 +10,13 @@ const app = dialogflow({
 
 function second_person(s) {
     return s
-        .replace("I am", "you are")
-        .replace("i am", "you are")
-        .replace("I was", "you were")
-        .replace("i was", "you were")
-        .replace("I", "you")
-        .replace("i", "you")
-        .replace("me", "you")
-        .replace("Me", "You")
-        .replace("my", "your")
-        .replace("My", "Your")
-        .replace("mine", "yours")
-        .replace("Mine", "Yours");
+        .replace(/( |^)I am([ .,:;/-]|$)/i,  "you are")
+        .replace(/( |^)I was([ .,:;/-]|$)/i, "you were")
+        .replace(/( |^)I([ .,:;/-]|$)/i,     "you")
+        .replace(/( |^)me([ .,:;/-]|$)/i,    "you")
+        .replace(/( |^)my([ .,:;/-]|$)/i,    "your")
+        .replace(/( |^)mine([ .,:;/-]|$)/i,  "yours")
+        ;
 }
 
 function strip_deep_link(input) {
@@ -35,32 +30,47 @@ function strip_deep_link(input) {
     return input;
 }
 
-function remember(s) {
+function tokenize(s) {
+    var tokens = s.split(/\s+/);
+    console.log(JSON.stringify(tokens));
+    return tokens;
+}
+
+function remember(conv, s) {
+    console.log("REMEMBERING");
     if (!conv.user.storage.hasOwnProperty('mem')) {
         conv.user.storage.mem = {
             statements: [],
             indices: {},
         }
     }
+    console.log(JSON.stringify(conv.user.storage));
     var i = conv.user.storage.mem.statements.length;
-    s.split().forEach(function(token) {
+    conv.user.storage.mem.statements.push(s);
+    tokenize(s).forEach(function(token) {
         if (typeof(conv.user.storage.mem.indices[token]) != "object") {
-            conv.user.storage.indices[token] = new Array();
+            conv.user.storage.mem.indices[token] = new Array();
         }
-        conv.user.storage.indices[token].push(i);
+        conv.user.storage.mem.indices[token].push(i);
     });
+    console.log(JSON.stringify(conv.user.storage));
 }
 
-function recall(s) {
+function recall(conv, s) {
+    console.log("RECALLING");
     var evidence = new Array();
-    conv.user.storage.indices.forEach(function(token) {
+    conv.user.storage.mem.statements.forEach(function(statement) {
         evidence.push(0);
     })
-    s.split().forEach(function(token) {
-        conv.user.storage.indices[token].forEach(function(statement_id) {
-            evidence[statement_id] += 1;
-        });
+    console.log(JSON.stringify(evidence));
+    tokenize(s).forEach(function(token) {
+        if (conv.user.storage.mem.indices.hasOwnProperty(token)) {
+            conv.user.storage.mem.indices[token].forEach(function(statement_id) {
+                evidence[statement_id] += 1;
+            });
+        }
     });
+    console.log("Evidence: " + JSON.stringify(evidence));
     var max_evidence_id = 0
     evidence.forEach(function(e, id, evidence) {
         if (e > evidence[max_evidence_id]) {
@@ -73,38 +83,46 @@ function recall(s) {
 app.intent('remember', (conv) => {
     var to_remember = strip_deep_link(conv.input.raw);
     if (/remember[, ]*(?:that +)?/i.test(to_remember)) {
-        var split = text.split(/remember[, ]*(?:that +)?/i);;
+        var split = to_remember.split(/remember[, ]*(?:that +)?/i);;
         to_remember = split.slice(1).join(" remember ");
     }
-    remember(to_remember);
+    remember(conv, to_remember);
     conv.ask("Alright, I'll remember that " + second_person(to_remember))
 });
 
 app.intent('recall', (conv) => {
     var query  = strip_deep_link(conv.input.raw)
     if (conv.user.storage.mem) {
-        var s = conv.user.storage.mem.statements[recall(query)];
+        var statement_id = recall(conv, query)
+        console.log(statement_id);
+        var s = conv.user.storage.mem.statements[statement_id];
+        console.log(s);
         s = second_person(s)
         s = s.charAt(0).toUpperCase() + s.substring(1)
         conv.ask(s);
     }
     else {
         conv.ask("I'm sorry, nothing has been remembered.");
-        conv.ask("Try saying \"Rember that ...\"");
+        conv.ask("Try saying \"Remember that ...\"");
     }
 });
 
-app.intent('forget', (conv) => {
-    conv.ask(new Confirmation("Are you sure you want to forget everything?"))
-});
+app.intent('clear all memories', (conv) => {
+    conv.user.storage = {};
+    conv.ask("Okay, all memories have been forgotten.")
+})
 
-app.intent('confirm forget', (conv, params, confirmed) => {
-    if (confirmed) {
-        conv.user.storage = {};
-        conv.ask("Alright, I've forgotten everything.");
-    } else {
-        conv.ask("Okay, don't worry, I'll keep remembering.");
-    }
-});
+// app.intent('forget', (conv) => {
+//     conv.ask(new Confirmation("Are you sure you want to forget everything?"))
+// });
+
+// app.intent('confirm forget', (conv, params, confirmed) => {
+//     if (confirmed) {
+//         conv.user.storage = {};
+//         conv.ask("Alright, I've forgotten everything.");
+//     } else {
+//         conv.ask("Okay, don't worry, I'll keep remembering.");
+//     }
+// });
 
 exports.dialogflowFirebaseFulfillment = functions.https.onRequest(app);
